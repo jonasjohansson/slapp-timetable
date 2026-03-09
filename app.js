@@ -55,7 +55,7 @@ const BIKE_ROUTE = {
 
 const JOURNEY_API = 'https://journeyplanner.integration.sl.se/v2/trips';
 const API_BASE = 'https://transport.integration.sl.se/v1/sites';
-const MAX_DEPARTURES = 5;
+const MAX_DEPARTURES = 8;
 const MAX_MINUTES = 30;
 const REFRESH_INTERVAL = 30000;
 
