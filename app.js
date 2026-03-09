@@ -21,8 +21,8 @@ const LINES = [
     name: '80',
     color: '#00a4b7',
     sources: [
-      { id: 9255, lines: [80] },                    // Dalénum
-      { id: 1442, lines: [80] },                    // Saltsjöqvarn
+      { id: 9255, lines: [80], directions: [2] },   // Dalénum → Nybroplan
+      { id: 1442, lines: [80], directions: [1] },   // Saltsjöqvarn → Ropsten
     ],
   },
 ];
@@ -54,6 +54,11 @@ const CONNECTIONS = {
   // Transfer at Ropsten to 206/21
   buffer: 3,
   ropsten: { id: 9220, lines: [206, 21], directions: [1] },
+  // Last mile: ride from Ropsten + walk to Larsbergsvägen 27
+  lastMile: {
+    206: 22,  // 20 min bus to Larsbergsvägen (Vändslingan) + 2 min walk
+    21: 16,   // 6 min tram to Larsberg + 10 min walk
+  },
 };
 
 const API_BASE = 'https://transport.integration.sl.se/v1/sites';
@@ -160,9 +165,12 @@ async function fetchConnections() {
         const greenDep = depTime(bestGreen);
         const leaveWork = new Date(greenDep.getTime() - C.walkToMedborgare * 60000);
         if (leaveWork >= now - 60000) {
+          const lastMileMin = C.lastMile[lid.line?.id] || 20;
+          const arriveHome = new Date(lidDep.getTime() + lastMileMin * 60000);
           connections.push({
             type: 'metro',
             leaveWork,
+            arriveHome,
             greenDep,
             greenLine: bestGreen.line?.id,
             redDep,
@@ -170,7 +178,7 @@ async function fetchConnections() {
             lidingoDep: lidDep,
             lidingoLine: lid.line?.id,
             lidingoDest: cleanDestination(lid.destination),
-            totalMin: Math.round((lidDep - leaveWork) / 60000),
+            totalMin: Math.round((arriveHome - leaveWork) / 60000),
           });
         }
       }
@@ -192,14 +200,17 @@ async function fetchConnections() {
       const busDep = depTime(bestBus);
       const leaveWork = new Date(busDep.getTime() - C.walkToMedborgare * 60000);
       if (leaveWork >= now - 60000) {
+        const lastMileMin = C.lastMile[lid.line?.id] || 20;
+        const arriveHome = new Date(lidDep.getTime() + lastMileMin * 60000);
         connections.push({
           type: 'bus76',
           leaveWork,
+          arriveHome,
           busDep,
           lidingoDep: lidDep,
           lidingoLine: lid.line?.id,
           lidingoDest: cleanDestination(lid.destination),
-          totalMin: Math.round((lidDep - leaveWork) / 60000),
+          totalMin: Math.round((arriveHome - leaveWork) / 60000),
         });
       }
     }
@@ -261,7 +272,7 @@ function renderConnection(conn) {
       <div class="route-times">
         <span class="route-dep">${fmtTime(conn.leaveWork)}</span>
         <span class="route-dur">${conn.totalMin} min</span>
-        <span class="route-arr">${fmtTime(conn.lidingoDep)}</span>
+        <span class="route-arr">${fmtTime(conn.arriveHome)}</span>
       </div>
       <div class="route-legs">${legsHtml}</div>
     </div>`;
