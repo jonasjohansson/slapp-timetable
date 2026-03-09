@@ -1,41 +1,35 @@
 /* ---- Config ---- */
 
-// Line colors used for badges
-const LINE_COLORS = {
-  206: '#1e6bc9',  // bus blue
-  21: '#7b4fa0',   // tram purple
-  80: '#00a4b7',   // boat teal
-  17: '#4ca85b',   // metro green
-  18: '#4ca85b',
-  19: '#4ca85b',
-};
-
-// Sections: each can pull from multiple API sources
-const SECTIONS = [
+// Lines: each is a card showing departures for one line from one or more stops
+const LINES = [
   {
-    name: 'Ropsten',
-    icon: '🚏',
+    name: '206 Larsbergsvägen–Ropsten',
+    color: '#1e6bc9',
     sources: [
-      { id: 2070, lines: [206] },                  // Larsbergsvägen bus 206 (both dirs)
-      { id: 9220, lines: [206], directions: [1] },  // Ropsten bus 206 towards Larsberg
-      { id: 9249, lines: [21] },                    // Larsberg tram 21 (both dirs)
+      { id: 2070, lines: [206] },                  // Larsbergsvägen (both dirs)
+      { id: 9220, lines: [206], directions: [1] },  // Ropsten towards Larsberg
     ],
   },
   {
-    name: 'Dalénum',
-    icon: '⛴',
-    sources: [{ id: 9255, lines: [80] }],
+    name: '21 Larsberg–Ropsten',
+    color: '#7b4fa0',
+    sources: [
+      { id: 9249, lines: [21] },                    // Larsberg (both dirs)
+    ],
   },
   {
-    name: 'Saltsjöqvarn',
-    icon: '⛴',
-    sources: [{ id: 1442, lines: [80] }],
+    name: '80 Dalénum–Nacka Strand',
+    color: '#00a4b7',
+    sources: [
+      { id: 9255, lines: [80] },                    // Dalénum
+      { id: 1442, lines: [80] },                    // Saltsjöqvarn
+    ],
   },
 ];
 
 const ZONES = [
-  { lat: 59.356, lng: 18.130, radius: 800, sections: ['Ropsten', 'Dalénum'] },
-  { lat: 59.320, lng: 18.100, radius: 500, sections: ['Saltsjöqvarn'] },
+  { lat: 59.356, lng: 18.130, radius: 800, lines: ['206 Larsbergsvägen–Ropsten', '21 Larsberg–Ropsten', '80 Dalénum–Nacka Strand'] },
+  { lat: 59.320, lng: 18.100, radius: 500, lines: ['80 Dalénum–Nacka Strand'] },
 ];
 
 const ROUTE = {
@@ -254,40 +248,34 @@ async function fetchSourceDepartures(source) {
   );
 }
 
-async function fetchSection(section) {
-  const results = await Promise.allSettled(section.sources.map(fetchSourceDepartures));
+async function fetchLine(line) {
+  const results = await Promise.allSettled(line.sources.map(fetchSourceDepartures));
   const allDeps = [];
   for (const r of results) {
     if (r.status === 'fulfilled') allDeps.push(...r.value);
   }
-  // Sort by destination then time
-  allDeps.sort((a, b) => {
-    const cmp = a.destination.localeCompare(b.destination, 'sv');
-    if (cmp !== 0) return cmp;
-    return minutesUntil(a) - minutesUntil(b);
-  });
-  return { section, departures: allDeps.slice(0, MAX_DEPARTURES) };
+  // Sort by time
+  allDeps.sort((a, b) => minutesUntil(a) - minutesUntil(b));
+  return { line, departures: allDeps.slice(0, MAX_DEPARTURES) };
 }
 
 function renderDeparture(dep) {
   const isNow = dep.display === 'Nu';
-  const color = LINE_COLORS[dep.line?.id] || '#555';
   return `
     <div class="departure-row">
-      <span class="line-badge" style="background:${color}">${esc(dep.line.designation)}</span>
       <span class="destination">${esc(dep.destination)}</span>
       <span class="time${isNow ? ' now' : ''}">${esc(dep.display)}</span>
     </div>`;
 }
 
-function renderSection({ section, departures }, dimmed) {
+function renderLine({ line, departures }, dimmed) {
   const rows = departures.length
     ? departures.map(renderDeparture).join('')
     : '<div class="no-departures">Inga avgångar</div>';
 
   return `
     <section class="stop-section${dimmed ? ' dimmed' : ''}">
-      <div class="stop-header">${section.icon} ${section.name}</div>
+      <div class="stop-header"><span class="line-badge" style="background:${line.color}">${esc(line.name)}</span></div>
       ${rows}
     </section>`;
 }
@@ -305,11 +293,11 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function getRelevantSections() {
+function getRelevantLines() {
   if (!userPosition) return null;
   for (const zone of ZONES) {
     const dist = distanceMeters(userPosition.lat, userPosition.lng, zone.lat, zone.lng);
-    if (dist <= zone.radius) return zone.sections;
+    if (dist <= zone.radius) return zone.lines;
   }
   return null;
 }
@@ -341,20 +329,20 @@ updateGPS();
 
 async function refresh() {
   updateGPS();
-  const relevant = getRelevantSections();
-  const [, ...sectionResults] = await Promise.allSettled([
+  const relevant = getRelevantLines();
+  const [, ...lineResults] = await Promise.allSettled([
     refreshRoute(),
-    ...SECTIONS.map(fetchSection),
+    ...LINES.map(fetchLine),
   ]);
-  const html = sectionResults.map((result, i) => {
-    const dimmed = relevant !== null && !relevant.includes(SECTIONS[i].name);
+  const html = lineResults.map((result, i) => {
+    const dimmed = relevant !== null && !relevant.includes(LINES[i].name);
     if (result.status === 'fulfilled') {
-      return renderSection(result.value, dimmed);
+      return renderLine(result.value, dimmed);
     }
-    console.error(`Failed to fetch ${SECTIONS[i].name}:`, result.reason);
+    console.error(`Failed to fetch ${LINES[i].name}:`, result.reason);
     return `
       <section class="stop-section${dimmed ? ' dimmed' : ''}">
-        <div class="stop-header">${SECTIONS[i].icon} ${esc(SECTIONS[i].name)}</div>
+        <div class="stop-header"><span class="line-badge" style="background:${LINES[i].color}">${esc(LINES[i].name)}</span></div>
         <div class="no-departures">Kunde inte hämta avgångar</div>
       </section>`;
   });
