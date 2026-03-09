@@ -123,6 +123,87 @@ main {
   font-size: 0.85rem;
 }
 
+/* Route card */
+#route-card {
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.route-card {
+  background: #141428;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.route-header {
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.route-journey {
+  padding: 10px 14px;
+}
+
+.route-journey + .route-journey {
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.route-times {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.route-dep {
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-dur {
+  font-size: 0.75rem;
+  color: #6b6b80;
+  flex: 1;
+  text-align: center;
+}
+
+.route-arr {
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-legs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.route-leg {
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.route-leg.transit {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.route-leg.walk {
+  color: #6b6b80;
+}
+
+.route-arrow {
+  color: #6b6b80;
+  font-size: 0.7rem;
+}
+
 .stop-section.dimmed {
   opacity: 0.35;
   transition: opacity 0.3s ease;
