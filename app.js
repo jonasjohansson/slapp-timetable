@@ -6,23 +6,23 @@ const LINES = [
     name: '206',
     color: '#1e6bc9',
     sources: [
-      { id: 2070, lines: [206] },                  // Larsbergsvägen (both dirs)
-      { id: 9220, lines: [206], directions: [1] },  // Ropsten towards Larsberg
+      { id: 2070, lines: [206], stop: 'Larsberg' },
+      { id: 9220, lines: [206], directions: [1], stop: 'Ropsten' },
     ],
   },
   {
     name: '21',
     color: '#7b4fa0',
     sources: [
-      { id: 9249, lines: [21] },                    // Larsberg (both dirs)
+      { id: 9249, lines: [21], stop: 'Larsberg' },
     ],
   },
   {
     name: '80',
     color: '#00a4b7',
     sources: [
-      { id: 9255, lines: [80], directions: [2] },   // Dalénum → Nybroplan
-      { id: 1442, lines: [80], directions: [1] },   // Saltsjöqvarn → Ropsten
+      { id: 9255, lines: [80], directions: [2], stop: 'Dalénum' },
+      { id: 1442, lines: [80], directions: [1], stop: 'Saltsjöqvarn' },
     ],
   },
 ];
@@ -323,7 +323,7 @@ async function fetchSourceDepartures(source) {
     source.lines.includes(dep.line?.id) &&
     (!source.directions || source.directions.includes(dep.direction_code)) &&
     minutesUntil(dep) <= MAX_MINUTES
-  );
+  ).map((dep) => ({ ...dep, _stop: source.stop }));
 }
 
 async function fetchLine(line) {
@@ -339,9 +339,11 @@ async function fetchLine(line) {
 
 function renderDeparture(dep) {
   const isNow = dep.display === 'Nu';
+  const dest = cleanDestination(dep.destination);
+  const route = dep._stop ? `${dep._stop}–${dest}` : dest;
   return `
     <div class="departure-row">
-      <span class="destination">${esc(cleanDestination(dep.destination))}</span>
+      <span class="destination">${esc(route)}</span>
       <span class="time${isNow ? ' now' : ''}">${esc(dep.display)}</span>
     </div>`;
 }
