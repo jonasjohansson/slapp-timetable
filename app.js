@@ -32,7 +32,7 @@ const JP_BASE = 'https://journeyplanner.integration.sl.se/v2';
 const API_BASE = 'https://transport.integration.sl.se/v1/sites';
 const MAX_DEPARTURES = 6;
 const MAX_MINUTES = 60;
-const REFRESH_INTERVAL = 30000;
+const REFRESH_INTERVAL = 60000;
 
 const departuresEl = document.getElementById('departures');
 const routeCardEl = document.getElementById('route-card');
@@ -90,7 +90,7 @@ async function fetchTrips() {
     name_origin: origin,
     type_destination: 'any',
     name_destination: destination,
-    calc_number_of_trips: '5',
+    calc_number_of_trips: '3',
   });
 
   const res = await fetch(`${JP_BASE}/trips?${params}`);
@@ -400,8 +400,16 @@ function renderLine({ line, departures }, index) {
   } else if (!departures.length) {
     rows = '<div class="no-departures">Inga avgångar</div>';
   } else {
-    // Group by departure station
+    // Group by departure station — always show both directions if two stations configured
+    const fromName = line.from?.name ? cleanStopName(line.from.name) : '';
+    const toName = line.to?.name ? cleanStopName(line.to.name) : '';
+    const hasTwoStations = fromName && toName && fromName !== toName;
+
     const grouped = {};
+    if (hasTwoStations) {
+      grouped[fromName] = [];
+      grouped[toName] = [];
+    }
     for (const dep of departures) {
       const stop = dep._stop ? cleanStopName(dep._stop) : '';
       if (!grouped[stop]) grouped[stop] = [];
@@ -409,10 +417,13 @@ function renderLine({ line, departures }, index) {
     }
     const stops = Object.keys(grouped);
     if (stops.length > 1) {
-      rows = stops.map((stop) =>
-        `<div class="direction-header">${esc(stop)}</div>` +
-        grouped[stop].map(renderDeparture).join('')
-      ).join('');
+      rows = stops.map((stop) => {
+        const deps = grouped[stop];
+        const depsHtml = deps.length
+          ? deps.map(renderDeparture).join('')
+          : '<div class="no-departures">Inga avgångar</div>';
+        return `<div class="direction-header">${esc(stop)}</div>${depsHtml}`;
+      }).join('');
     } else {
       rows = departures.map(renderDeparture).join('');
     }
