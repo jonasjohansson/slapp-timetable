@@ -1,21 +1,56 @@
-const STOPS = [
-  { id: 2070, name: 'Larsbergsvägen', icon: '🚌', lines: [206], color: '#1e6bc9' },
-  { id: 9220, name: 'Ropsten → Larsberg', icon: '🚌', lines: [206], directions: [1], color: '#1e6bc9' },
-  { id: 9249, name: 'Larsberg', icon: '🚃', lines: [21], color: '#7b4fa0' },
-  { id: 9255, name: 'Dalénum', icon: '⛴', lines: [80], color: '#00a4b7' },
-  { id: 1442, name: 'Saltsjöqvarn', icon: '⛴', lines: [80], color: '#00a4b7' },
-  { id: 9191, name: 'Medborgarplatsen', icon: '🚇', lines: [17, 18, 19], directions: [1], color: '#4ca85b' },
+/* ---- Config ---- */
+
+// Line colors used for badges
+const LINE_COLORS = {
+  206: '#1e6bc9',  // bus blue
+  21: '#7b4fa0',   // tram purple
+  80: '#00a4b7',   // boat teal
+  17: '#4ca85b',   // metro green
+  18: '#4ca85b',
+  19: '#4ca85b',
+};
+
+// Sections: each can pull from multiple API sources
+const SECTIONS = [
+  {
+    name: 'Ropsten',
+    icon: '🚏',
+    sources: [
+      { id: 2070, lines: [206] },                  // Larsbergsvägen bus 206 (both dirs)
+      { id: 9220, lines: [206], directions: [1] },  // Ropsten bus 206 towards Larsberg
+      { id: 9249, lines: [21] },                    // Larsberg tram 21 (both dirs)
+    ],
+  },
+  {
+    name: 'Dalénum',
+    icon: '⛴',
+    sources: [{ id: 9255, lines: [80] }],
+  },
+  {
+    name: 'Saltsjöqvarn',
+    icon: '⛴',
+    sources: [{ id: 1442, lines: [80] }],
+  },
 ];
 
 const ZONES = [
-  { lat: 59.356, lng: 18.130, radius: 800, stops: ['Larsbergsvägen', 'Ropsten → Larsberg', 'Larsberg', 'Dalénum'] },
-  { lat: 59.320, lng: 18.100, radius: 500, stops: ['Saltsjöqvarn'] },
-  { lat: 59.314, lng: 18.074, radius: 500, stops: ['Medborgarplatsen'] },
+  { lat: 59.356, lng: 18.130, radius: 800, sections: ['Ropsten', 'Dalénum'] },
+  { lat: 59.320, lng: 18.100, radius: 500, sections: ['Saltsjöqvarn'] },
 ];
 
 const ROUTE = {
   origin: 'Larsbergsvägen 27, Lidingö',
   destination: 'Åsögatan 122, Stockholm',
+};
+
+// Bike+boat route config
+const BIKE_ROUTE = {
+  bikeToBoat: 5,       // min bike from home to Dalénum
+  boatSiteId: 9255,    // Dalénum
+  boatLine: 80,
+  boatDirection: 2,    // towards Nybroplan (passes Saltsjöqvarn)
+  boatTravelTime: 25,  // min Dalénum → Saltsjöqvarn (via Ropsten, Nacka Strand)
+  bikeFromBoat: 12,    // min bike from Saltsjöqvarn to Åsögatan 122
 };
 
 const JOURNEY_API = 'https://journeyplanner.integration.sl.se/v2/trips';
@@ -36,33 +71,57 @@ function esc(str) {
   return d.innerHTML;
 }
 
+function pad(n) { return String(n).padStart(2, '0'); }
+
 /* ---- Journey planner ---- */
 
 const MODE_ICONS = {
-  1: '🚇',   // metro
-  2: '🚇',   // metro
-  4: '🚃',   // tram
-  5: '🚌',   // bus
-  6: '🚌',   // bus
-  7: '⛴',   // ship
-  9: '🚆',   // train
-  99: '🚶',  // transfer walk
-  100: '🚶', // walk
+  1: '🚇', 2: '🚇', 4: '🚃', 5: '🚌', 6: '🚌',
+  7: '⛴', 9: '🚆', 99: '🚶', 100: '🚶',
 };
 
-async function fetchRoute() {
+async function fetchJourneys(from, to, count = 3) {
   const params = new URLSearchParams({
     type_origin: 'any',
-    name_origin: ROUTE.origin,
+    name_origin: from,
     type_destination: 'any',
-    name_destination: ROUTE.destination,
-    calc_number_of_trips: '3',
+    name_destination: to,
+    calc_number_of_trips: String(count),
     language: 'sv',
   });
   const res = await fetch(`${JOURNEY_API}?${params}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  return (data.journeys || []).slice(0, 3);
+  return (data.journeys || []).slice(0, count);
+}
+
+async function fetchBikeBoatRoutes() {
+  const res = await fetch(`${API_BASE}/${BIKE_ROUTE.boatSiteId}/departures`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  const boats = (data.departures || []).filter(
+    (d) => d.line?.id === BIKE_ROUTE.boatLine && d.direction_code === BIKE_ROUTE.boatDirection
+  );
+
+  const now = new Date();
+  return boats.slice(0, 2).map((boat) => {
+    const scheduled = new Date(boat.scheduled);
+    const leaveHome = new Date(scheduled.getTime() - BIKE_ROUTE.bikeToBoat * 60000);
+    const arrSaltsjoquvarn = new Date(scheduled.getTime() + BIKE_ROUTE.boatTravelTime * 60000);
+    const arrWork = new Date(arrSaltsjoquvarn.getTime() + BIKE_ROUTE.bikeFromBoat * 60000);
+    const totalMin = Math.round((arrWork - leaveHome) / 60000);
+
+    // Skip if we'd need to leave before now
+    if (leaveHome < now - 60000) return null;
+
+    return {
+      depTime: `${pad(leaveHome.getHours())}:${pad(leaveHome.getMinutes())}`,
+      arrTime: `${pad(arrWork.getHours())}:${pad(arrWork.getMinutes())}`,
+      boatDep: `${pad(scheduled.getHours())}:${pad(scheduled.getMinutes())}`,
+      totalMin,
+      label: 'bike',
+    };
+  }).filter(Boolean);
 }
 
 function renderLeg(leg) {
@@ -102,20 +161,67 @@ function renderJourney(journey) {
     </div>`;
 }
 
+function renderBikeBoatJourney(route) {
+  return `
+    <div class="route-journey">
+      <div class="route-times">
+        <span class="route-dep">${esc(route.depTime)}</span>
+        <span class="route-dur">${route.totalMin} min</span>
+        <span class="route-arr">${esc(route.arrTime)}</span>
+      </div>
+      <div class="route-legs">
+        <span class="route-leg walk">🚲 ${BIKE_ROUTE.bikeToBoat}m</span>
+        <span class="route-arrow">→</span>
+        <span class="route-leg transit">⛴ 80</span>
+        <span class="route-arrow">→</span>
+        <span class="route-leg walk">🚲 ${BIKE_ROUTE.bikeFromBoat}m</span>
+      </div>
+    </div>`;
+}
+
+function buildRouteCard(label, allRoutes) {
+  if (!allRoutes.length) return '';
+  allRoutes.sort((a, b) => a.dep.localeCompare(b.dep));
+  const html = allRoutes.map((r) =>
+    r.type === 'transit' ? renderJourney(r.data) : renderBikeBoatJourney(r.data)
+  ).join('');
+  return `
+    <div class="route-card">
+      <div class="route-header">${label}</div>
+      ${html}
+    </div>`;
+}
+
 async function refreshRoute() {
   try {
-    const journeys = await fetchRoute();
-    if (!journeys.length) {
-      routeCardEl.innerHTML = '';
-      return;
+    const [toWork, toHome, bikeToWork] = await Promise.all([
+      fetchJourneys(ROUTE.origin, ROUTE.destination, 3),
+      fetchJourneys(ROUTE.destination, ROUTE.origin, 3),
+      fetchBikeBoatRoutes(),
+    ]);
+
+    // To work: transit + bike+boat options
+    const toWorkRoutes = [];
+    for (const j of toWork) {
+      const dep = j.legs?.[0]?.origin?.departureTimePlanned?.slice(11, 16) || '99:99';
+      toWorkRoutes.push({ type: 'transit', data: j, dep });
     }
-    routeCardEl.innerHTML = `
-      <div class="route-card">
-        <div class="route-header">🏠 → 💼 ${esc(ROUTE.destination)}</div>
-        ${journeys.map(renderJourney).join('')}
-      </div>`;
+    for (const b of bikeToWork) {
+      toWorkRoutes.push({ type: 'bike', data: b, dep: b.depTime });
+    }
+
+    // To home: transit only
+    const toHomeRoutes = toHome.map((j) => ({
+      type: 'transit',
+      data: j,
+      dep: j.legs?.[0]?.origin?.departureTimePlanned?.slice(11, 16) || '99:99',
+    }));
+
+    routeCardEl.innerHTML =
+      buildRouteCard('🏠 → 💼 ' + esc(ROUTE.destination), toWorkRoutes) +
+      buildRouteCard('💼 → 🏠 ' + esc(ROUTE.origin), toHomeRoutes);
   } catch (err) {
-    console.error('Failed to fetch route:', err);
+    console.error('Failed to fetch routes:', err);
     routeCardEl.innerHTML = '';
   }
 }
@@ -126,7 +232,6 @@ function minutesUntil(dep) {
   if (dep.display === 'Nu') return 0;
   const minMatch = dep.display.match(/^(\d+)\s*min/);
   if (minMatch) return parseInt(minMatch[1]);
-  // Time format like "13:28" — calculate from now
   const timeMatch = dep.display.match(/^(\d{1,2}):(\d{2})$/);
   if (timeMatch) {
     const now = new Date();
@@ -138,26 +243,35 @@ function minutesUntil(dep) {
   return 0;
 }
 
-async function fetchDepartures(stop) {
-  const res = await fetch(`${API_BASE}/${stop.id}/departures`);
+async function fetchSourceDepartures(source) {
+  const res = await fetch(`${API_BASE}/${source.id}/departures`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  const filtered = (data.departures || []).filter((dep) =>
-    stop.lines.includes(dep.line?.id) &&
-    (!stop.directions || stop.directions.includes(dep.direction_code)) &&
+  return (data.departures || []).filter((dep) =>
+    source.lines.includes(dep.line?.id) &&
+    (!source.directions || source.directions.includes(dep.direction_code)) &&
     minutesUntil(dep) <= MAX_MINUTES
   );
-  // Sort by destination name then by time
-  filtered.sort((a, b) => {
+}
+
+async function fetchSection(section) {
+  const results = await Promise.allSettled(section.sources.map(fetchSourceDepartures));
+  const allDeps = [];
+  for (const r of results) {
+    if (r.status === 'fulfilled') allDeps.push(...r.value);
+  }
+  // Sort by destination then time
+  allDeps.sort((a, b) => {
     const cmp = a.destination.localeCompare(b.destination, 'sv');
     if (cmp !== 0) return cmp;
     return minutesUntil(a) - minutesUntil(b);
   });
-  return { stop, departures: filtered.slice(0, MAX_DEPARTURES) };
+  return { section, departures: allDeps.slice(0, MAX_DEPARTURES) };
 }
 
-function renderDeparture(dep, color) {
+function renderDeparture(dep) {
   const isNow = dep.display === 'Nu';
+  const color = LINE_COLORS[dep.line?.id] || '#555';
   return `
     <div class="departure-row">
       <span class="line-badge" style="background:${color}">${esc(dep.line.designation)}</span>
@@ -166,14 +280,14 @@ function renderDeparture(dep, color) {
     </div>`;
 }
 
-function renderStop({ stop, departures }, dimmed) {
+function renderSection({ section, departures }, dimmed) {
   const rows = departures.length
-    ? departures.map((dep) => renderDeparture(dep, stop.color)).join('')
+    ? departures.map(renderDeparture).join('')
     : '<div class="no-departures">Inga avgångar</div>';
 
   return `
     <section class="stop-section${dimmed ? ' dimmed' : ''}">
-      <div class="stop-header">${stop.icon} ${stop.name}</div>
+      <div class="stop-header">${section.icon} ${section.name}</div>
       ${rows}
     </section>`;
 }
@@ -191,11 +305,11 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function getRelevantStops() {
+function getRelevantSections() {
   if (!userPosition) return null;
   for (const zone of ZONES) {
     const dist = distanceMeters(userPosition.lat, userPosition.lng, zone.lat, zone.lng);
-    if (dist <= zone.radius) return zone.stops;
+    if (dist <= zone.radius) return zone.sections;
   }
   return null;
 }
@@ -227,20 +341,20 @@ updateGPS();
 
 async function refresh() {
   updateGPS();
-  const relevant = getRelevantStops();
-  const [, ...depResults] = await Promise.allSettled([
+  const relevant = getRelevantSections();
+  const [, ...sectionResults] = await Promise.allSettled([
     refreshRoute(),
-    ...STOPS.map(fetchDepartures),
+    ...SECTIONS.map(fetchSection),
   ]);
-  const html = depResults.map((result, i) => {
-    const dimmed = relevant !== null && !relevant.includes(STOPS[i].name);
+  const html = sectionResults.map((result, i) => {
+    const dimmed = relevant !== null && !relevant.includes(SECTIONS[i].name);
     if (result.status === 'fulfilled') {
-      return renderStop(result.value, dimmed);
+      return renderSection(result.value, dimmed);
     }
-    console.error(`Failed to fetch ${STOPS[i].name}:`, result.reason);
+    console.error(`Failed to fetch ${SECTIONS[i].name}:`, result.reason);
     return `
       <section class="stop-section${dimmed ? ' dimmed' : ''}">
-        <div class="stop-header">${STOPS[i].icon} ${esc(STOPS[i].name)}</div>
+        <div class="stop-header">${SECTIONS[i].icon} ${esc(SECTIONS[i].name)}</div>
         <div class="no-departures">Kunde inte hämta avgångar</div>
       </section>`;
   });
