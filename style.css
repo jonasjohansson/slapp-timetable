@@ -26,21 +26,11 @@ body::-webkit-scrollbar {
   display: none;
 }
 
-header {
-  text-align: center;
-  padding: 24px 16px 8px;
-}
-
-header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
 .updated {
   font-size: 0.75rem;
   color: #6b6b80;
-  margin-top: 4px;
+  text-align: center;
+  padding: 12px 16px 24px;
 }
 
 main {
@@ -78,8 +68,8 @@ main {
   gap: 10px;
 }
 
-.departure-row + .departure-row {
-  border-top: 1px solid rgba(255, 255, 255, 0.03);
+.departure-row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .line-badge {
@@ -132,7 +122,7 @@ main {
 #route-card {
   max-width: 500px;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 16px 16px 0;
 }
 
 .route-card {
@@ -187,13 +177,21 @@ main {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-wrap: wrap;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.route-legs::-webkit-scrollbar {
+  display: none;
 }
 
 .route-leg {
   font-size: 0.8rem;
   padding: 2px 6px;
   border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .route-leg.transit {

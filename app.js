@@ -32,22 +32,30 @@ const ZONES = [
   { lat: 59.320, lng: 18.100, radius: 500, lines: ['80'] },
 ];
 
-const ROUTE = {
-  origin: 'Larsbergsvägen 27, Lidingö',
-  destination: 'Åsögatan 122, Stockholm',
+// Smart connections: walk → green line Medborgarplatsen → Slussen → red 13 → Ropsten → 206/21
+// Alternative: walk → bus 76 Medborgarplatsen → Ropsten → 206/21
+const CONNECTIONS = {
+  // Walk to Medborgarplatsen
+  walkToMedborgare: 6,       // min walk from Åsögatan 122
+  medborgareSiteId: 9191,     // Medborgarplatsen
+  // Metro route: green line → Slussen → red line → Ropsten
+  greenLines: [17, 18, 19],
+  greenDirection: 1,           // northbound towards Slussen
+  greenTravelTime: 2,          // min Medborgarplatsen → Slussen
+  slussenSiteId: 9192,
+  redLines: [13, 14],
+  redDirection: 1,              // northbound towards Ropsten
+  slussenTransfer: 3,           // min transfer green→red at Slussen
+  redTravelTime: 12,            // min Slussen → Ropsten
+  // Bus 76 alternative: direct Medborgarplatsen → Ropsten
+  bus76Line: 76,
+  bus76Direction: 2,            // towards Ropsten
+  bus76TravelTime: 25,          // min Medborgarplatsen → Ropsten
+  // Transfer at Ropsten to 206/21
+  buffer: 3,
+  ropsten: { id: 9220, lines: [206, 21], directions: [1] },
 };
 
-// Bike+boat route config
-const BIKE_ROUTE = {
-  bikeToBoat: 5,       // min bike from home to Dalénum
-  boatSiteId: 9255,    // Dalénum
-  boatLine: 80,
-  boatDirection: 2,    // towards Nybroplan (passes Saltsjöqvarn)
-  boatTravelTime: 25,  // min Dalénum → Saltsjöqvarn (via Ropsten, Nacka Strand)
-  bikeFromBoat: 12,    // min bike from Saltsjöqvarn to Åsögatan 122
-};
-
-const JOURNEY_API = 'https://journeyplanner.integration.sl.se/v2/trips';
 const API_BASE = 'https://transport.integration.sl.se/v1/sites';
 const MAX_DEPARTURES = 8;
 const MAX_MINUTES = 30;
@@ -67,13 +75,6 @@ function esc(str) {
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
-function toLocalTime(isoStr) {
-  if (!isoStr) return '';
-  const d = new Date(isoStr);
-  if (isNaN(d)) return '';
-  return d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' });
-}
-
 const DESTINATION_NAMES = {
   'Högsätra Larsberg': 'Larsberg',
   'Gåshaga brygga': 'Gåshaga',
@@ -83,139 +84,200 @@ function cleanDestination(name) {
   return DESTINATION_NAMES[name] || name;
 }
 
-/* ---- Journey planner ---- */
+/* ---- Smart connections: Åsögatan → Slussen → Ropsten → Lidingö ---- */
 
-const MODE_ICONS = {
-  1: '🚇', 2: '🚇', 4: '🚃', 5: '🚌', 6: '🚌',
-  7: '⛴', 9: '🚆', 99: '🚶', 100: '🚶',
-};
+async function fetchConnections() {
+  const C = CONNECTIONS;
+  const [greenRes, redRes, ropstenRes] = await Promise.allSettled([
+    fetch(`${API_BASE}/${C.medborgareSiteId}/departures`).then((r) => r.ok ? r.json() : Promise.reject()),
+    fetch(`${API_BASE}/${C.slussenSiteId}/departures`).then((r) => r.ok ? r.json() : Promise.reject()),
+    fetch(`${API_BASE}/${C.ropsten.id}/departures`).then((r) => r.ok ? r.json() : Promise.reject()),
+  ]);
 
-async function fetchJourneys(from, to, count = 3) {
-  const params = new URLSearchParams({
-    type_origin: 'any',
-    name_origin: from,
-    type_destination: 'any',
-    name_destination: to,
-    calc_number_of_trips: String(count),
-    language: 'sv',
-  });
-  const res = await fetch(`${JOURNEY_API}?${params}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  return (data.journeys || []).slice(0, count);
-}
-
-async function fetchBikeBoatRoutes() {
-  const res = await fetch(`${API_BASE}/${BIKE_ROUTE.boatSiteId}/departures`);
-  if (!res.ok) return [];
-  const data = await res.json();
-  const boats = (data.departures || []).filter(
-    (d) => d.line?.id === BIKE_ROUTE.boatLine && d.direction_code === BIKE_ROUTE.boatDirection
-  );
+  if (greenRes.status !== 'fulfilled' || redRes.status !== 'fulfilled' || ropstenRes.status !== 'fulfilled') return [];
 
   const now = new Date();
-  return boats.slice(0, 2).map((boat) => {
-    const scheduled = new Date(boat.scheduled);
-    const leaveHome = new Date(scheduled.getTime() - BIKE_ROUTE.bikeToBoat * 60000);
-    const arrSaltsjoquvarn = new Date(scheduled.getTime() + BIKE_ROUTE.boatTravelTime * 60000);
-    const arrWork = new Date(arrSaltsjoquvarn.getTime() + BIKE_ROUTE.bikeFromBoat * 60000);
-    const totalMin = Math.round((arrWork - leaveHome) / 60000);
 
-    // Skip if we'd need to leave before now
-    if (leaveHome < now - 60000) return null;
-
-    return {
-      depTime: `${pad(leaveHome.getHours())}:${pad(leaveHome.getMinutes())}`,
-      arrTime: `${pad(arrWork.getHours())}:${pad(arrWork.getMinutes())}`,
-      boatDep: `${pad(scheduled.getHours())}:${pad(scheduled.getMinutes())}`,
-      totalMin,
-      label: 'bike',
-    };
-  }).filter(Boolean);
-}
-
-function renderLeg(leg) {
-  const tp = leg.transportation?.product;
-  const iconId = tp?.iconId || 100;
-  const icon = MODE_ICONS[iconId] || '🚶';
-  const line = leg.transportation?.disassembledName || '';
-  const isWalk = iconId >= 99;
-
-  if (isWalk && !line) {
-    const mins = Math.round(leg.duration / 60);
-    if (mins <= 1) return '';
-    return `<span class="route-leg walk">${icon} ${mins}m</span>`;
+  function depTime(dep) {
+    return dep.expected ? new Date(dep.expected) : new Date(dep.scheduled);
   }
 
-  return `<span class="route-leg transit">${icon} ${esc(line)}</span>`;
+  // Green line from Medborgarplatsen northbound
+  const greens = (greenRes.value.departures || []).filter(
+    (d) => C.greenLines.includes(d.line?.id) && d.direction_code === C.greenDirection
+  );
+
+  // Red line from Slussen northbound
+  const reds = (redRes.value.departures || []).filter(
+    (d) => C.redLines.includes(d.line?.id) && d.direction_code === C.redDirection
+  );
+
+  // 206/21 from Ropsten towards Lidingö
+  const lidingo = (ropstenRes.value.departures || []).filter(
+    (d) => C.ropsten.lines.includes(d.line?.id) && C.ropsten.directions.includes(d.direction_code)
+  );
+
+  // Bus 76 from Medborgarplatsen towards Ropsten
+  const buses76 = (greenRes.value.departures || []).filter(
+    (d) => d.line?.id === C.bus76Line && d.direction_code === C.bus76Direction
+  );
+
+  const connections = [];
+
+  for (const lid of lidingo) {
+    const lidDep = depTime(lid);
+
+    // --- Metro route: green → red → Ropsten ---
+    const latestRedArr = new Date(lidDep.getTime() - C.buffer * 60000);
+    const latestRedDep = new Date(latestRedArr.getTime() - C.redTravelTime * 60000);
+
+    let bestRed = null;
+    for (const r of reds) {
+      const rDep = depTime(r);
+      if (rDep <= latestRedDep && rDep > now - 60000) {
+        if (!bestRed || rDep > depTime(bestRed)) bestRed = r;
+      }
+    }
+
+    if (bestRed) {
+      const redDep = depTime(bestRed);
+      const latestGreenArr = new Date(redDep.getTime() - C.slussenTransfer * 60000);
+      const latestGreenDep = new Date(latestGreenArr.getTime() - C.greenTravelTime * 60000);
+
+      let bestGreen = null;
+      for (const g of greens) {
+        const gDep = depTime(g);
+        if (gDep <= latestGreenDep && gDep > now - 60000) {
+          if (!bestGreen || gDep > depTime(bestGreen)) bestGreen = g;
+        }
+      }
+
+      if (bestGreen) {
+        const greenDep = depTime(bestGreen);
+        const leaveWork = new Date(greenDep.getTime() - C.walkToMedborgare * 60000);
+        if (leaveWork >= now - 60000) {
+          connections.push({
+            type: 'metro',
+            leaveWork,
+            greenDep,
+            greenLine: bestGreen.line?.id,
+            redDep,
+            redLine: bestRed.line?.id,
+            lidingoDep: lidDep,
+            lidingoLine: lid.line?.id,
+            lidingoDest: cleanDestination(lid.destination),
+            totalMin: Math.round((lidDep - leaveWork) / 60000),
+          });
+        }
+      }
+    }
+
+    // --- Bus 76 route: direct to Ropsten ---
+    const latestBusArr = new Date(lidDep.getTime() - C.buffer * 60000);
+    const latestBusDep = new Date(latestBusArr.getTime() - C.bus76TravelTime * 60000);
+
+    let bestBus = null;
+    for (const b of buses76) {
+      const bDep = depTime(b);
+      if (bDep <= latestBusDep && bDep > now - 60000) {
+        if (!bestBus || bDep > depTime(bestBus)) bestBus = b;
+      }
+    }
+
+    if (bestBus) {
+      const busDep = depTime(bestBus);
+      const leaveWork = new Date(busDep.getTime() - C.walkToMedborgare * 60000);
+      if (leaveWork >= now - 60000) {
+        connections.push({
+          type: 'bus76',
+          leaveWork,
+          busDep,
+          lidingoDep: lidDep,
+          lidingoLine: lid.line?.id,
+          lidingoDest: cleanDestination(lid.destination),
+          totalMin: Math.round((lidDep - leaveWork) / 60000),
+        });
+      }
+    }
+  }
+
+  // Sort by leave time, deduplicate
+  connections.sort((a, b) => a.leaveWork - b.leaveWork);
+  const seen = new Set();
+  return connections.filter((c) => {
+    const key = `${c.type}-${c.lidingoDep.getTime()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 5);
 }
 
-function renderJourney(journey) {
-  const legs = journey.legs || [];
-  const firstDep = legs[0]?.origin?.departureTimePlanned || '';
-  const lastArr = legs[legs.length - 1]?.destination?.arrivalTimePlanned || '';
-  const depTime = toLocalTime(firstDep);
-  const arrTime = toLocalTime(lastArr);
-  const totalMin = Math.round(journey.tripDuration / 60);
+function fmtTime(date) {
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
-  const legHtml = legs.map(renderLeg).filter(Boolean).join('<span class="route-arrow">→</span>');
+const LINE_COLORS = {
+  13: '#e32d22', 14: '#1e6bc9',  // red, blue metro
+  17: '#4ca85b', 18: '#4ca85b', 19: '#4ca85b',  // green metro
+  206: '#1e6bc9', 21: '#7b4fa0', 80: '#00a4b7',  // bus, tram, boat
+  76: '#1e6bc9',  // bus 76
+};
+
+function renderConnection(conn) {
+  const lidingoColor = LINE_COLORS[conn.lidingoLine] || '#888';
+  const lidingoIcon = conn.lidingoLine === 206 ? '🚌' : '🚃';
+
+  let legsHtml;
+  if (conn.type === 'bus76') {
+    legsHtml = `
+      <span class="route-leg walk">🚶 ${CONNECTIONS.walkToMedborgare}m</span>
+      <span class="route-arrow">→</span>
+      <span class="route-leg transit" style="background:${LINE_COLORS[76]}">🚌 76 Medborgarpl. ${fmtTime(conn.busDep)}</span>
+      <span class="route-arrow">→</span>
+      <span class="route-leg transit" style="background:${lidingoColor}">
+        ${lidingoIcon} ${conn.lidingoLine} ${fmtTime(conn.lidingoDep)}
+      </span>`;
+  } else {
+    const greenColor = LINE_COLORS[conn.greenLine] || '#4ca85b';
+    const redColor = LINE_COLORS[conn.redLine] || '#e32d22';
+    legsHtml = `
+      <span class="route-leg walk">🚶 ${CONNECTIONS.walkToMedborgare}m</span>
+      <span class="route-arrow">→</span>
+      <span class="route-leg transit" style="background:${greenColor}">🚇 ${conn.greenLine} Medborgarpl. ${fmtTime(conn.greenDep)}</span>
+      <span class="route-arrow">→</span>
+      <span class="route-leg transit" style="background:${redColor}">🚇 ${conn.redLine} Slussen ${fmtTime(conn.redDep)}</span>
+      <span class="route-arrow">→</span>
+      <span class="route-leg transit" style="background:${lidingoColor}">
+        ${lidingoIcon} ${conn.lidingoLine} ${fmtTime(conn.lidingoDep)}
+      </span>`;
+  }
 
   return `
     <div class="route-journey">
       <div class="route-times">
-        <span class="route-dep">${esc(depTime)}</span>
-        <span class="route-dur">${totalMin} min</span>
-        <span class="route-arr">${esc(arrTime)}</span>
+        <span class="route-dep">${fmtTime(conn.leaveWork)}</span>
+        <span class="route-dur">${conn.totalMin} min</span>
+        <span class="route-arr">${fmtTime(conn.lidingoDep)}</span>
       </div>
-      <div class="route-legs">${legHtml}</div>
-    </div>`;
-}
-
-function renderBikeBoatJourney(route) {
-  return `
-    <div class="route-journey">
-      <div class="route-times">
-        <span class="route-dep">${esc(route.depTime)}</span>
-        <span class="route-dur">${route.totalMin} min</span>
-        <span class="route-arr">${esc(route.arrTime)}</span>
-      </div>
-      <div class="route-legs">
-        <span class="route-leg walk">🚲 ${BIKE_ROUTE.bikeToBoat}m</span>
-        <span class="route-arrow">→</span>
-        <span class="route-leg transit">⛴ 80</span>
-        <span class="route-arrow">→</span>
-        <span class="route-leg walk">🚲 ${BIKE_ROUTE.bikeFromBoat}m</span>
-      </div>
-    </div>`;
-}
-
-function buildRouteCard(label, allRoutes) {
-  if (!allRoutes.length) return '';
-  allRoutes.sort((a, b) => a.dep.localeCompare(b.dep));
-  const html = allRoutes.map((r) =>
-    r.type === 'transit' ? renderJourney(r.data) : renderBikeBoatJourney(r.data)
-  ).join('');
-  return `
-    <div class="route-card">
-      <div class="route-header">${label}</div>
-      ${html}
+      <div class="route-legs">${legsHtml}</div>
     </div>`;
 }
 
 async function refreshRoute() {
   try {
-    const toHome = await fetchJourneys(ROUTE.destination, ROUTE.origin, 3);
-
-    const toHomeRoutes = toHome.map((j) => ({
-      type: 'transit',
-      data: j,
-      dep: toLocalTime(j.legs?.[0]?.origin?.departureTimePlanned) || '99:99',
-    }));
-
-    routeCardEl.innerHTML =
-      buildRouteCard('Åsögatan 122 → Larsbergsvägen 27', toHomeRoutes);
+    const connections = await fetchConnections();
+    if (!connections.length) {
+      routeCardEl.innerHTML = '';
+      return;
+    }
+    const html = connections.map(renderConnection).join('');
+    routeCardEl.innerHTML = `
+      <div class="route-card">
+        <div class="route-header">Åsögatan 122 → Larsbergsvägen 27</div>
+        ${html}
+      </div>`;
   } catch (err) {
-    console.error('Failed to fetch routes:', err);
+    console.error('Failed to fetch connections:', err);
     routeCardEl.innerHTML = '';
   }
 }
