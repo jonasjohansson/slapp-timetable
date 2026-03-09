@@ -22,7 +22,7 @@ const LINES = [
     color: '#00a4b7',
     sources: [
       { id: 9255, lines: [80], directions: [2], stop: 'Dalénum', dest: 'Nacka Strand' },
-      { id: 1442, lines: [80], directions: [1], stop: 'Saltsjöqvarn', dest: 'Dalénum' },
+      { id: 1442, lines: [80], directions: [1], stop: 'Saltsjöqvarn' },
     ],
   },
 ];
