@@ -3,7 +3,7 @@
 // Lines: each is a card showing departures for one line from one or more stops
 const LINES = [
   {
-    name: '206 Larsbergsvägen–Ropsten',
+    name: '206',
     color: '#1e6bc9',
     sources: [
       { id: 2070, lines: [206] },                  // Larsbergsvägen (both dirs)
@@ -11,14 +11,14 @@ const LINES = [
     ],
   },
   {
-    name: '21 Larsberg–Ropsten',
+    name: '21',
     color: '#7b4fa0',
     sources: [
       { id: 9249, lines: [21] },                    // Larsberg (both dirs)
     ],
   },
   {
-    name: '80 Dalénum–Nacka Strand',
+    name: '80',
     color: '#00a4b7',
     sources: [
       { id: 9255, lines: [80] },                    // Dalénum
@@ -28,8 +28,8 @@ const LINES = [
 ];
 
 const ZONES = [
-  { lat: 59.356, lng: 18.130, radius: 800, lines: ['206 Larsbergsvägen–Ropsten', '21 Larsberg–Ropsten', '80 Dalénum–Nacka Strand'] },
-  { lat: 59.320, lng: 18.100, radius: 500, lines: ['80 Dalénum–Nacka Strand'] },
+  { lat: 59.356, lng: 18.130, radius: 800, lines: ['206', '21', '80'] },
+  { lat: 59.320, lng: 18.100, radius: 500, lines: ['80'] },
 ];
 
 const ROUTE = {
@@ -66,6 +66,24 @@ function esc(str) {
 }
 
 function pad(n) { return String(n).padStart(2, '0'); }
+
+const DESTINATION_NAMES = {
+  'Högsätra Larsberg': 'Till Larsberg',
+  'Gåshaga brygga': 'Till Gåshaga',
+  'Ropsten': 'Till Ropsten',
+  'Nacka Strand': 'Till Nacka Strand',
+  'Nybroplan': 'Till Nybroplan',
+  'Alvik': 'Till Alvik',
+  'Åkeshov': 'Till Åkeshov',
+  'Hässelby strand': 'Till Hässelby strand',
+  'Farsta strand': 'Till Farsta strand',
+  'Skarpnäck': 'Till Skarpnäck',
+  'Hagsätra': 'Till Hagsätra',
+};
+
+function cleanDestination(name) {
+  return DESTINATION_NAMES[name] || 'Till ' + name;
+}
 
 /* ---- Journey planner ---- */
 
@@ -263,7 +281,7 @@ function renderDeparture(dep) {
   const isNow = dep.display === 'Nu';
   return `
     <div class="departure-row">
-      <span class="destination">${esc(dep.destination)}</span>
+      <span class="destination">${esc(cleanDestination(dep.destination))}</span>
       <span class="time${isNow ? ' now' : ''}">${esc(dep.display)}</span>
     </div>`;
 }
