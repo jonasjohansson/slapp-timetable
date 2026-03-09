@@ -90,7 +90,7 @@ async function fetchTrips() {
     name_origin: origin,
     type_destination: 'any',
     name_destination: destination,
-    calc_number_of_trips: '3',
+    calc_number_of_trips: '6',
   });
 
   const res = await fetch(`${JP_BASE}/trips?${params}`);
@@ -166,8 +166,8 @@ function renderTrip(journey) {
 
 async function refreshRoute() {
   const { origin, destination } = config.route;
-  const originLabel = origin || 'Från';
-  const destLabel = destination || 'Till';
+  const originLabel = origin ? cleanStopName(origin) : 'Från';
+  const destLabel = destination ? cleanStopName(destination) : 'Till';
   const hasRoute = origin && destination;
 
   let tripsHtml = '';
@@ -184,7 +184,7 @@ async function refreshRoute() {
         })
         .filter((x) => x.dep >= now)
         .sort((a, b) => a.dep - b.dep)
-        .slice(0, 3)
+        .slice(0, 6)
         .map((x) => x.journey);
       tripsHtml = sorted.length
         ? sorted.map(renderTrip).join('')
