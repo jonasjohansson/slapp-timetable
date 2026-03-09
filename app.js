@@ -2,10 +2,9 @@
 
 const EMPTY_LINE = { lineId: null, lineName: null, color: '#555', url: null, from: null };
 
+const MAX_LINES = 6;
+
 const DEFAULT_LINES = [
-  { ...EMPTY_LINE },
-  { ...EMPTY_LINE },
-  { ...EMPTY_LINE },
   { ...EMPTY_LINE },
 ];
 
@@ -442,7 +441,7 @@ function renderLine({ line, departures }, index) {
              <span class="header-sep">·</span>
              <span class="station-pick" data-index="${index}" data-field="from">${esc(fromName)}</span>
              <span class="line-clear" data-index="${index}">&times;</span>`
-          : `<input class="line-input" data-index="${index}" type="text" inputmode="numeric" placeholder="Linjenr" maxlength="4" /><span class="line-ok hidden" data-index="${index}">OK</span>`
+          : `<input class="line-input" data-index="${index}" type="text" inputmode="numeric" placeholder="Lägg till linje…" maxlength="4" /><span class="line-ok hidden" data-index="${index}">OK</span>`
         }
       </div>
       ${rows}
@@ -617,6 +616,16 @@ async function refresh() {
       </section>`;
   });
 
+  // Add "add line" bar if under max
+  const allConfigured = config.lines.every((l) => l.lineId && l.from);
+  if (config.lines.length < MAX_LINES) {
+    const disabled = !allConfigured;
+    html.push(`
+      <section class="stop-section add-line-section${disabled ? ' disabled' : ''}" id="add-line-btn">
+        <div class="stop-header add-line-header">+</div>
+      </section>`);
+  }
+
   departuresEl.innerHTML = html.join('');
 
   // Attach line-name click handlers (re-enter line number)
@@ -672,15 +681,22 @@ async function refresh() {
   });
 
 
-
-  // Attach clear button handlers
+  // Attach clear button handlers — remove the line entirely
   departuresEl.querySelectorAll('.line-clear').forEach((el) => {
     el.addEventListener('click', () => {
       const idx = parseInt(el.dataset.index, 10);
-      config.lines[idx] = { ...EMPTY_LINE };
+      config.lines.splice(idx, 1);
+      if (config.lines.length === 0) config.lines.push({ ...EMPTY_LINE });
       saveConfig(config);
       refresh();
     });
+  });
+
+  // Attach add-line button
+  document.getElementById('add-line-btn')?.addEventListener('click', () => {
+    config.lines.push({ ...EMPTY_LINE });
+    saveConfig(config);
+    refresh();
   });
 
   updateTimestamp();

@@ -57,7 +57,7 @@ body::-webkit-scrollbar {
 main {
   max-width: 500px;
   margin: 0 auto;
-  padding: 8px 16px 24px;
+  padding: 16px 16px 24px;
 }
 
 .stop-section {
@@ -81,6 +81,33 @@ main {
   font-size: 0.85rem;
   border-radius: 0;
   background: none !important;
+}
+
+.add-line-section {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+}
+
+.add-line-header {
+  background: transparent !important;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 1.2rem;
+}
+
+.add-line-section:not(.disabled):hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.add-line-section:not(.disabled):hover .add-line-header {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.add-line-section.disabled {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
 }
 
 .timetable-link {
@@ -273,10 +300,10 @@ main {
 .line-ok {
   cursor: pointer;
   margin-left: auto;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 700;
   opacity: 0.6;
-  padding: 2px 8px;
+  padding: 4px 20px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 4px;
 }
@@ -343,8 +370,8 @@ main {
   margin-left: auto;
   cursor: pointer;
   opacity: 0.4;
-  font-size: 1rem;
-  padding: 0 4px;
+  font-size: 1.3rem;
+  padding: 0 6px;
 }
 
 .line-clear:hover {
