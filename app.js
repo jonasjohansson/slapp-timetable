@@ -204,23 +204,8 @@ function buildRouteCard(label, allRoutes) {
 
 async function refreshRoute() {
   try {
-    const [toWork, toHome, bikeToWork] = await Promise.all([
-      fetchJourneys(ROUTE.origin, ROUTE.destination, 3),
-      fetchJourneys(ROUTE.destination, ROUTE.origin, 3),
-      fetchBikeBoatRoutes(),
-    ]);
+    const toHome = await fetchJourneys(ROUTE.destination, ROUTE.origin, 3);
 
-    // To work: transit + bike+boat options
-    const toWorkRoutes = [];
-    for (const j of toWork) {
-      const dep = toLocalTime(j.legs?.[0]?.origin?.departureTimePlanned) || '99:99';
-      toWorkRoutes.push({ type: 'transit', data: j, dep });
-    }
-    for (const b of bikeToWork) {
-      toWorkRoutes.push({ type: 'bike', data: b, dep: b.depTime });
-    }
-
-    // To home: transit only
     const toHomeRoutes = toHome.map((j) => ({
       type: 'transit',
       data: j,
@@ -228,7 +213,6 @@ async function refreshRoute() {
     }));
 
     routeCardEl.innerHTML =
-      buildRouteCard('Larsbergsvägen 27 → Åsögatan 122', toWorkRoutes) +
       buildRouteCard('Åsögatan 122 → Larsbergsvägen 27', toHomeRoutes);
   } catch (err) {
     console.error('Failed to fetch routes:', err);
